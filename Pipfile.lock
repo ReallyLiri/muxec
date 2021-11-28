@@ -1,0 +1,25 @@
+{
+    "_meta": {
+        "hash": {
+            "sha256": "bc8d02daf5a1316aa6c65cc581bc4957362b510612d29cf660077464ed91e7db"
+        },
+        "pipfile-spec": 6,
+        "requires": {
+            "python_version": "3.6"
+        },
+        "sources": [
+            {
+                "name": "pypi",
+                "url": "https://pypi.org/simple",
+                "verify_ssl": true
+            }
+        ]
+    },
+    "default": {
+        "muxec": {
+            "editable": true,
+            "path": "."
+        }
+    },
+    "develop": {}
+}
