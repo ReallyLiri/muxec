@@ -11,8 +11,8 @@ import traceback
 import select
 
 STATUS_HEIGHT = 1
-stdScr = curses.initscr()
-full_height, full_width = stdScr.getmaxyx()
+stdScr = None
+full_height, full_width = None, None
 panes = []
 total = 0
 completed_processes = set()
@@ -86,6 +86,9 @@ def clear_pane(pane_num):
 
 
 def build_views(num_panes):
+    global stdScr, full_height, full_width
+    stdScr = curses.initscr()
+    full_height, full_width = stdScr.getmaxyx()
     curses.noecho()
     curses.cbreak()
     curses.curs_set(0)
@@ -231,17 +234,18 @@ def run(commands):
         raise
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser()
 
+
+def parse_args():
     parser.add_argument(
         "-p", "--parallelism", type=int, metavar="parallelism",
-        help="number of commands to run in parallel",
+        help="number of commands to run in parallel (default: 4)",
         default=4
     )
 
     parser.add_argument(
-        "commands", nargs="+", metavar="command",
+        "commands", nargs="+", metavar="commands",
         help="commands to run. if using args, escape entire command with quotes"
     )
 
@@ -251,6 +255,7 @@ def parse_args():
 def main():
     opts = parse_args()
     commands = opts.commands
+
     parallelism = min(opts.parallelism, len(commands))
     _log(f"running {len(commands)} commands with {parallelism} parallelism, terminal is h={full_height}, w={full_width}")
 
