@@ -2,6 +2,7 @@
 
 import argparse
 import curses
+import fileinput
 import os
 import signal
 import subprocess
@@ -239,14 +240,24 @@ parser = argparse.ArgumentParser()
 
 def parse_args():
     parser.add_argument(
-        "-p", "--parallelism", type=int, metavar="parallelism",
+        "-p", "--parallelism", type=int,
         help="number of commands to run in parallel (default: 4)",
         default=4
     )
 
     parser.add_argument(
-        "commands", nargs="+", metavar="commands",
+        "commands", nargs="+",
         help="commands to run. if using args, escape entire command with quotes"
+    )
+
+    parser.add_argument(
+        "-x", "--xargs", default=False, action='store_true',
+        help="pipe in standard input as input to the command"
+    )
+
+    parser.add_argument(
+        "-I", "--replace-str", type=str, default="{}",
+        help="when using xargs mode, replace occurrences of replace-str in the command with input, default: {}"
     )
 
     return parser.parse_args()
@@ -255,6 +266,16 @@ def parse_args():
 def main():
     opts = parse_args()
     commands = opts.commands
+
+    if opts.xargs:
+        base_command = " ".join(commands)
+        replace_str = opts.replace_str
+        commands = []
+        for line in fileinput.input():
+            command = f"{base_command} {line}"
+            if replace_str in line:
+                command = base_command.replace(replace_str, line)
+            commands.append(command)
 
     parallelism = min(opts.parallelism, len(commands))
     _log(f"running {len(commands)} commands with {parallelism} parallelism, terminal is h={full_height}, w={full_width}")
