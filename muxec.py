@@ -41,6 +41,10 @@ class BreakOnFailError(Exception):
     pass
 
 
+class ReadSmoreError(Exception):
+    skip = 0
+
+
 def write_row(top_offset):
     _log(f"Writing full row at {top_offset}")
     stdScr.addstr(top_offset, 0, '-' * full_width)
@@ -67,93 +71,124 @@ def create_pane(width, height, top_offset, left_offset):
     }
 
 
-def refresh_pane(pane, y, x):
-    view_top = max(y - pane['height'], 0)
-    view_left = max(x - pane['width'], 0)
-    pad = pane['pad']
-    pad.refresh(view_top, view_left, *pane['coords'])
-
-
 BACKSPACE_ORD = 8
 ESCAPE_ORD = 27
 LF_ORD = 10
 CR_ORD = 13
 CSI_PREFIX = '['
+CSI_PARAM_SEPARATOR = ';'
 CSI_CURSOR_UP = 'A'
 CSI_CURSOR_DOWN = 'B'
 CSI_CURSOR_FORWARD = 'C'
 CSI_CURSOR_BACK = 'D'
-CSI_CURSOR_ERASE = 'J'
-CSI_CURSOR_ERASE_PARAM_CLEAR_ALL = 2
+CSI_CURSOR_POSITION = 'H'
+CSI_CURSOR_ERASE_IN_LINE = 'K'
+CSI_CURSOR_ERASE_IN_DISPLAY = 'J'
 
 
 def _at(lst, i):
-    if len(lst) >= i:
-        return None
+    if i >= len(lst):
+        raise ReadSmoreError()
     return lst[i]
 
 
 def _is_number(ch):
+    if ch is None:
+        return False
     return ord('0') <= ord(ch) <= ord('9')
 
 
-def _handle_escape_sequence(pad, text, i):
+def _extract_number(text, i):
+    start = i
+    while _is_number(_at(text, i)):
+        i += 1
+    param_str = text[start:i]
+    param = int(param_str) if param_str else None
+    return i, param
+
+
+def _handle_escape_sequence(pad, text, esc_i):
     # see https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_(Control_Sequence_Introducer)_sequences
 
-    if _at(text, i + 1) != CSI_PREFIX:
+    if _at(text, esc_i + 1) != CSI_PREFIX:
         return
-    yield i + 1
+    yield esc_i + 1
 
-    param_end_index = i + 2
-    while _is_number(_at(text, param_end_index)):
-        yield param_end_index
-        param_end_index += 1
-    param_str = text[i + 2:param_end_index]
-    param = int(param_str) if param_str else None
+    param_end_index, param = _extract_number(text, esc_i + 2)
+    if param is not None:
+        yield from range(esc_i + 2, param_end_index + 1)
 
-    command = text[param_end_index]
-    _log(f"Detected escape sequence with command '{command}' and param {param}")
+    command = _at(text, param_end_index)
+    param2 = None
+    if command == CSI_PARAM_SEPARATOR:
+        param2_end_index, param2 = _extract_number(text, param_end_index + 1)
+        if param2 is not None:
+            yield from range(param_end_index + 1, param2_end_index + 1)
+        command = _at(text, param2_end_index)
 
-    if command == CSI_CURSOR_ERASE:
-        if param != CSI_CURSOR_ERASE_PARAM_CLEAR_ALL:
+    _log(f"Detected escape sequence with command '{command}' and params {param} {param2}")
+
+    if command == CSI_CURSOR_ERASE_IN_DISPLAY:
+        if param != 2:
             return
         _fill_blanks_and_reset_cursor(pad)
         return
 
     y, x = pad.getyx()
+    my, mx = pad.getmaxyx()
+
     param = 1 if param is None else param
+    param2 = 1 if param2 is None else param2
     if command == CSI_CURSOR_UP:
         y -= param
     elif command == CSI_CURSOR_DOWN:
         y += param
+        if ord(_at(text, param_end_index + 1)) == LF_ORD:
+            yield param_end_index + 1
     elif command == CSI_CURSOR_FORWARD:
         x += param
     elif command == CSI_CURSOR_BACK:
         x -= param
+    elif command == CSI_CURSOR_POSITION:
+        y = param - 1
+        x = param2 - 1
+    else:
+        return
+    y = max(min(y, my - 1), 0)
+    x = max(min(x, mx - 1), 0)
     pad.move(y, x)
 
 
 def write_to_pane(pane_num, text):
     pane = panes[pane_num]
     pad = pane['pad']
-    init_y, init_x = pad.getyx()
     skip_indexes = set()
     for i, ch in enumerate(text):
-        if i in skip_indexes:
-            continue
-        ch_ord = ord(ch)
-        if ch_ord == BACKSPACE_ORD:
-            pad.addstr("\b \b")
-        elif ch_ord == CR_ORD:
-            pass
-        elif ch_ord == ESCAPE_ORD:
-            for skip_idx in _handle_escape_sequence(pad, text, i):
-                skip_indexes.add(skip_idx)
-        else:
-            if should_log and unicodedata.category(ch)[0] == 'C' and ch_ord != LF_ORD:
-                _log(f"observed unhandled ctrl character: {ch_ord}")
-            pad.addch(ch)
-    refresh_pane(pane, init_y, init_x)
+        try:
+            if i in skip_indexes:
+                continue
+            ch_ord = ord(ch)
+            if ch_ord == BACKSPACE_ORD:
+                pad.addstr("\b \b")
+            elif ch_ord == ESCAPE_ORD:
+                for skip_idx in _handle_escape_sequence(pad, text, i):
+                    skip_indexes.add(skip_idx)
+            elif ch_ord == CR_ORD:
+                # \r is return to start of line, but \r\n should be treated like \n
+                if ord(_at(text, i+1)) == LF_ORD:
+                    continue
+                y, _ = pad.getyx()
+                pad.move(y, 0)
+            else:
+                if should_log and unicodedata.category(ch)[0] == 'C' and ch_ord != LF_ORD:
+                    _log(f"Observed unhandled ctrl character: {ch_ord}")
+                pad.addch(ch)
+            if ch_ord == LF_ORD or ch_ord == CR_ORD:
+                pad.refresh(0, 0, *pane['coords'])
+        except ReadSmoreError as err:
+            err.skip = i - 1
+            raise err
+    pad.refresh(0, 0, *pane['coords'])
 
 
 def _fill_blanks_and_reset_cursor(pad):
@@ -168,7 +203,7 @@ def clear_pane(pane_num):
     pane = panes[pane_num]
     pad = pane['pad']
     _fill_blanks_and_reset_cursor(pad)
-    refresh_pane(pane, y, x)
+    pad.refresh(0, 0, *pane['coords'])
 
 
 def build_views(num_panes):
@@ -285,10 +320,18 @@ def run(commands):
     while active_fds or not exhausted:
         ready_fds, _, _ = select.select(active_fds, [], [], 1)
         for fd in ready_fds:
-            data = os.read(fd, 1024)
-            if data:
-                data_string = data.decode('utf-8')
-                write_to_pane(pane_num_by_fd[fd], data_string)
+            continue_read = True
+            data_string = ""
+            while continue_read:
+                data = os.read(fd, 1024)
+                if data:
+                    data_string += data.decode('utf-8')
+                    try:
+                        write_to_pane(pane_num_by_fd[fd], data_string)
+                        continue_read = False
+                    except ReadSmoreError as err:
+                        data_string = data_string[err.skip:]
+                        continue_read = True
 
         ready_panes = []
         for fd in active_fds.copy():
@@ -403,4 +446,16 @@ def main():
 
 
 if __name__ == '__main__':
+    if "MUXEC_DEBUG" in os.environ:
+        try:
+            import pydevd_pycharm
+
+            pydevd_pycharm.settrace('localhost', port=4024, stdoutToServer=True, stderrToServer=True)
+        except ModuleNotFoundError:
+            print("Please install pydevd_pycharm manually to your venv, copy correct version from PyCharm Debug Configuration")
+            print("i.e `(venv) pip install pydevd-pycharm~=211.7142.13")
+            exit(1)
+        except ConnectionRefusedError:
+            print("*** PyCharm remote debugger is not started -- please start it manually and re-run ***")
+            exit(1)
     main()
