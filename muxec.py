@@ -11,6 +11,7 @@ import time
 import traceback
 
 import select
+import unicodedata
 
 STATUS_HEIGHT = 1
 stdScr = None
@@ -73,24 +74,100 @@ def refresh_pane(pane, y, x):
     pad.refresh(view_top, view_left, *pane['coords'])
 
 
+BACKSPACE_ORD = 8
+ESCAPE_ORD = 27
+LF_ORD = 10
+CR_ORD = 13
+CSI_PREFIX = '['
+CSI_CURSOR_UP = 'A'
+CSI_CURSOR_DOWN = 'B'
+CSI_CURSOR_FORWARD = 'C'
+CSI_CURSOR_BACK = 'D'
+CSI_CURSOR_ERASE = 'J'
+CSI_CURSOR_ERASE_PARAM_CLEAR_ALL = 2
+
+
+def _at(lst, i):
+    if len(lst) >= i:
+        return None
+    return lst[i]
+
+
+def _is_number(ch):
+    return ord('0') <= ord(ch) <= ord('9')
+
+
+def _handle_escape_sequence(pad, text, i):
+    # see https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_(Control_Sequence_Introducer)_sequences
+
+    if _at(text, i + 1) != CSI_PREFIX:
+        return
+    yield i + 1
+
+    param_end_index = i + 2
+    while _is_number(_at(text, param_end_index)):
+        yield param_end_index
+        param_end_index += 1
+    param_str = text[i + 2:param_end_index]
+    param = int(param_str) if param_str else None
+
+    command = text[param_end_index]
+    _log(f"Detected escape sequence with command '{command}' and param {param}")
+
+    if command == CSI_CURSOR_ERASE:
+        if param != CSI_CURSOR_ERASE_PARAM_CLEAR_ALL:
+            return
+        _fill_blanks_and_reset_cursor(pad)
+        return
+
+    y, x = pad.getyx()
+    param = 1 if param is None else param
+    if command == CSI_CURSOR_UP:
+        y -= param
+    elif command == CSI_CURSOR_DOWN:
+        y += param
+    elif command == CSI_CURSOR_FORWARD:
+        x += param
+    elif command == CSI_CURSOR_BACK:
+        x -= param
+    pad.move(y, x)
+
+
 def write_to_pane(pane_num, text):
     pane = panes[pane_num]
     pad = pane['pad']
-    y, x = pad.getyx()
-    text = text.replace('\r', '')
-    pad.addstr(y, x, text)
-    # _log(f"Writing to {len(text)} chars {pane_num}: {[ord(ch) for ch in text]}")
-    refresh_pane(pane, y, x)
+    init_y, init_x = pad.getyx()
+    skip_indexes = set()
+    for i, ch in enumerate(text):
+        if i in skip_indexes:
+            continue
+        ch_ord = ord(ch)
+        if ch_ord == BACKSPACE_ORD:
+            pad.addstr("\b \b")
+        elif ch_ord == CR_ORD:
+            pass
+        elif ch_ord == ESCAPE_ORD:
+            for skip_idx in _handle_escape_sequence(pad, text, i):
+                skip_indexes.add(skip_idx)
+        else:
+            if should_log and unicodedata.category(ch)[0] == 'C' and ch_ord != LF_ORD:
+                _log(f"observed unhandled ctrl character: {ch_ord}")
+            pad.addch(ch)
+    refresh_pane(pane, init_y, init_x)
+
+
+def _fill_blanks_and_reset_cursor(pad):
+    y, x = pad.getmaxyx()
+    for line in range(y):
+        pad.addstr(line, 0, " " * x)
+    pad.move(0, 0)
 
 
 def clear_pane(pane_num):
     _log(f"Clearing {pane_num}")
     pane = panes[pane_num]
     pad = pane['pad']
-    y, x = pad.getmaxyx()
-    for line in range(y):
-        pad.addstr(line, 0, " " * x)
-    pad.move(0, 0)
+    _fill_blanks_and_reset_cursor(pad)
     refresh_pane(pane, y, x)
 
 
