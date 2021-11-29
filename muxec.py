@@ -114,6 +114,10 @@ def _handle_escape_sequence(pad, text, esc_i):
         return
     yield esc_i + 1
 
+    if _at(text, esc_i + 2) == '?':
+        yield esc_i + 2
+        esc_i += 1
+
     param_end_index, param = _extract_number(text, esc_i + 2)
     if param is not None:
         yield from range(esc_i + 2, param_end_index + 1)
@@ -175,16 +179,12 @@ def write_to_pane(pane_num, text):
                     skip_indexes.add(skip_idx)
             elif ch_ord == CR_ORD:
                 # \r is return to start of line, but \r\n should be treated like \n
-                if ord(_at(text, i+1)) == LF_ORD:
-                    continue
-                y, _ = pad.getyx()
-                pad.move(y, 0)
+                if ord(_at(text, i + 1)) != LF_ORD:
+                    pad.addch(ch)
             else:
                 if should_log and unicodedata.category(ch)[0] == 'C' and ch_ord != LF_ORD:
                     _log(f"Observed unhandled ctrl character: {ch_ord}")
                 pad.addch(ch)
-            if ch_ord == LF_ORD or ch_ord == CR_ORD:
-                pad.refresh(0, 0, *pane['coords'])
         except ReadSmoreError as err:
             err.skip = i - 1
             raise err
