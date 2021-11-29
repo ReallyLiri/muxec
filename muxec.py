@@ -3,6 +3,7 @@
 import argparse
 import curses
 import os
+import pty
 import signal
 import subprocess
 import sys
@@ -76,11 +77,14 @@ def write_to_pane(pane_num, text):
     pane = panes[pane_num]
     pad = pane['pad']
     y, x = pad.getyx()
+    text = text.replace('\r', '')
     pad.addstr(y, x, text)
+    # _log(f"Writing to {len(text)} chars {pane_num}: {[ord(ch) for ch in text]}")
     refresh_pane(pane, y, x)
 
 
 def clear_pane(pane_num):
+    _log(f"Clearing {pane_num}")
     pane = panes[pane_num]
     pad = pane['pad']
     y, x = pad.getmaxyx()
@@ -155,12 +159,14 @@ def run(commands):
 
     def _process_generator():
         for command in commands:
+            primary, secondary = pty.openpty()
             yield subprocess.Popen(
                 command,
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+                stdout=secondary,
+                stderr=secondary,
+                close_fds=True
+            ), primary
 
     gen = _process_generator()
     pane_num_by_fd = {}
@@ -170,35 +176,27 @@ def run(commands):
 
     def _try_run_process(run_on_pane_num, clear):
         global exhausted
-        process = next(gen, None)
+        process, fd = next(gen, (None, 0))
         if process is None:
             exhausted = True
-            clear_pane(run_on_pane_num)
+            write_to_pane(run_on_pane_num, "[completed, no more commands to run]")
             return
-        fds = process_fds(process)
-        _log(f"Started process '{process.args}' ({process.pid}) with fds {fds} on pane {run_on_pane_num} (clear={clear})")
+        _log(f"Started process '{process.args}' ({process.pid}) with fd {fd} on pane {run_on_pane_num} (clear={clear})")
         all_processes_to_stderr[process] = ""
-        for fd in fds:
-            active_fds.add(fd)
-            pane_num_by_fd[fd] = run_on_pane_num
-            data_template[fd] = bytes()
-            process_by_fd[fd] = process
+        active_fds.add(fd)
+        pane_num_by_fd[fd] = run_on_pane_num
+        data_template[fd] = bytes()
+        process_by_fd[fd] = process
         if clear:
             clear_pane(run_on_pane_num)
 
-    def _on_fd_inactive(fd):
-        active_fds.remove(fd)
-        process = process_by_fd[fd]
-        _log(f"fd {fd} of process {process.pid} is inactive")
-        if any(check_fd in active_fds for check_fd in process_fds(process)):
-            return None
-        completed_processes.add(process.pid)
-        process.poll()
-        exit_code = process.returncode
-        ready_pane_num = pane_num_by_fd[fd]
-        _log(f"Process {process.pid} at {ready_pane_num} completed with code {exit_code}")
+    def _on_process_completed(completed_fd, completed_process):
+        completed_processes.add(completed_process.pid)
+        exit_code = completed_process.returncode
+        ready_pane_num = pane_num_by_fd[completed_fd]
+        _log(f"Process {completed_process.pid} with fd {completed_fd} at {ready_pane_num} completed with code {exit_code}")
         if exit_code != 0:
-            failed_processes.add(process.pid)
+            failed_processes.add(completed_process.pid)
             if break_on_fail:
                 raise BreakOnFailError()
         update_status()
@@ -207,42 +205,28 @@ def run(commands):
     for pane_num in range(len(panes)):
         _try_run_process(pane_num, False)
 
-    try:
-        while active_fds or not exhausted:
-            data_by_fd = {}
-            timeout = None
-            ready_panes = set()
-            while True:
-                fds_read, _, _ = select.select(active_fds, [], [], timeout)
-                timeout = 0
-                if fds_read:
-                    for fd in fds_read:
-                        data = os.read(fd, 1)
-                        if data:
-                            if fd not in data_by_fd:
-                                data_by_fd[fd] = bytes()
-                            data_by_fd[fd] += data
-                        else:
-                            ready_pane = _on_fd_inactive(fd)
-                            if ready_pane is not None:
-                                ready_panes.add(ready_pane)
-                else:
-                    break
-            for fd, data in data_by_fd.items():
-                if data:
-                    data_string = data.decode('utf-8')
-                    process = process_by_fd[fd]
-                    if fd == process.stderr.fileno():
-                        all_processes_to_stderr[process] += data_string
-                    write_to_pane(pane_num_by_fd[fd], data_string)
+    while active_fds or not exhausted:
+        ready_fds, _, _ = select.select(active_fds, [], [], 1)
+        for fd in ready_fds:
+            data = os.read(fd, 1024)
+            if data:
+                data_string = data.decode('utf-8')
+                write_to_pane(pane_num_by_fd[fd], data_string)
 
-            for ready_pane in ready_panes:
-                _try_run_process(ready_pane, True)
+        ready_panes = []
+        for fd in active_fds.copy():
+            process = process_by_fd[fd]
+            if process.poll() is not None:
+                active_fds.remove(fd)
+                ready_pane = _on_process_completed(fd, process)
+                if ready_pane is not None:
+                    ready_panes.append(ready_pane)
+                continue
 
-        update_status()
+        for ready_pane in ready_panes:
+            _try_run_process(ready_pane, True)
 
-    except KeyboardInterrupt:
-        raise
+    update_status()
 
 
 parser = argparse.ArgumentParser()
@@ -296,7 +280,7 @@ def main():
             commands.append(command)
 
     parallelism = min(opts.parallelism, len(commands))
-    _log(f"running {len(commands)} commands with {parallelism} parallelism, terminal is h={full_height}, w={full_width}")
+    _log(f"Running {len(commands)} commands with {parallelism} parallelism, terminal is h={full_height}, w={full_width}")
 
     num_panes = parallelism
 
@@ -315,7 +299,7 @@ def main():
             print("breaking on failure...")
             broke = True
         else:
-            _log(f"failed with exception: {ex}")
+            _log(f"Failed with exception: {ex}")
             _log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
             failed = True
         for proc in all_processes_to_stderr.keys():
