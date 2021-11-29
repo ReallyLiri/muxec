@@ -83,7 +83,6 @@ def write_to_pane(pane_num, text):
 def clear_pane(pane_num):
     pane = panes[pane_num]
     pad = pane['pad']
-    pad.move(0, 0)
     y, x = pad.getmaxyx()
     for line in range(y):
         pad.addstr(line, 0, " " * x)
