@@ -2,10 +2,10 @@
 
 import argparse
 import curses
-import fileinput
 import os
 import signal
 import subprocess
+import sys
 import time
 import traceback
 
@@ -18,10 +18,11 @@ panes = []
 total = 0
 completed_processes = set()
 failed_processes = set()
-all_processes = []
+all_processes_to_stderr = {}
 exhausted = False
 log_file = "/tmp/muxec.log"
 should_log = os.environ.get("MUXEC_LOG") is not None
+break_on_fail = False
 
 if should_log and os.path.exists(log_file):
     os.remove(log_file)
@@ -32,6 +33,10 @@ def _log(message):
         return
     with open(log_file, "a") as f:
         f.write(message + "\n")
+
+
+class BreakOnFailError(Exception):
+    pass
 
 
 def write_row(top_offset):
@@ -169,10 +174,11 @@ def run(commands):
         process = next(gen, None)
         if process is None:
             exhausted = True
+            clear_pane(run_on_pane_num)
             return
         fds = process_fds(process)
         _log(f"Started process '{process.args}' ({process.pid}) with fds {fds} on pane {run_on_pane_num} (clear={clear})")
-        all_processes.append(process)
+        all_processes_to_stderr[process] = ""
         for fd in fds:
             active_fds.add(fd)
             pane_num_by_fd[fd] = run_on_pane_num
@@ -194,6 +200,8 @@ def run(commands):
         _log(f"Process {process.pid} at {ready_pane_num} completed with code {exit_code}")
         if exit_code != 0:
             failed_processes.add(process.pid)
+            if break_on_fail:
+                raise BreakOnFailError()
         update_status()
         return ready_pane_num
 
@@ -224,6 +232,9 @@ def run(commands):
             for fd, data in data_by_fd.items():
                 if data:
                     data_string = data.decode('utf-8')
+                    process = process_by_fd[fd]
+                    if fd == process.stderr.fileno():
+                        all_processes_to_stderr[process] += data_string
                     write_to_pane(pane_num_by_fd[fd], data_string)
 
             for ready_pane in ready_panes:
@@ -260,20 +271,28 @@ def parse_args():
         help="when using xargs mode, replace occurrences of replace-str in the command with input, default: {}"
     )
 
+    parser.add_argument(
+        "--break-on-fail", default=False, action='store_true',
+        help="immediately break whole execution if any command fails"
+    )
+
     return parser.parse_args()
 
 
 def main():
+    global break_on_fail
     opts = parse_args()
+    break_on_fail = opts.break_on_fail
     commands = opts.commands
 
     if opts.xargs:
         base_command = " ".join(commands)
         replace_str = opts.replace_str
         commands = []
-        for line in fileinput.input():
+        for line in sys.stdin:
+            line = line.strip()
             command = f"{base_command} {line}"
-            if replace_str in line:
+            if replace_str in base_command:
                 command = base_command.replace(replace_str, line)
             commands.append(command)
 
@@ -286,29 +305,39 @@ def main():
     total = len(commands)
 
     failed = False
+    broke = False
     try:
         build_views(num_panes)
         run(commands)
-    except KeyboardInterrupt:
-        print("interrupted, shutting down...")
-        for proc in all_processes:
+    except Exception as ex:
+        if isinstance(ex, KeyboardInterrupt):
+            print("interrupted, shutting down...")
+        if isinstance(ex, BreakOnFailError):
+            print("breaking on failure...")
+            broke = True
+        else:
+            _log(f"failed with exception: {ex}")
+            _log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
+            failed = True
+        for proc in all_processes_to_stderr.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGINT)
         time.sleep(1)
-        for proc in all_processes:
+        for proc in all_processes_to_stderr.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGKILL)
-    except Exception as ex:
-        _log(f"failed with exception: {ex}")
-        _log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
-        failed = True
     finally:
         end()
 
     if not failed:
-        print(f"Completed running {len(all_processes)} processes, {len(failed_processes)} failed")
-        for process in all_processes:
+        if not broke:
+            print(f"Completed running {len(all_processes_to_stderr)} processes, {len(failed_processes)} failed")
+        for process, stderr in all_processes_to_stderr.items():
             print(f"\tProcess '{process.args}' ({process.pid}) completed with code {process.returncode}")
+            if process.returncode != 0:
+                stderr = stderr.strip().replace('\n', '\n\t\t')
+                if stderr:
+                    print(f"\t\t{stderr}")
     else:
         print("internal error")
 
