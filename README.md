@@ -25,6 +25,8 @@ To date, the tool has only been tested on `MacOS` and `xterm` with `python3.9`, 
 pip install --upgrade muxec
 ```
 
+[Visit on PyPi](https://pypi.org/project/muxec/)
+
 ## Usage
 
 ```
