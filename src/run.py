@@ -22,12 +22,6 @@ def _get_fds(process):
 
 
 def _create_subprocess(command, pipe):
-    env = {
-        "LINES": str(state.full_height),
-        "COLUMNS": str(state.full_width),
-        "TERM": TERM_ENV
-    }
-    log(f"!!! {env}")
     return subprocess.Popen(
         command,
         shell=True,
@@ -37,7 +31,8 @@ def _create_subprocess(command, pipe):
         env={
             "LINES": str(state.full_height),
             "COLUMNS": str(state.full_width),
-            "TERM": TERM_ENV
+            "TERM": TERM_ENV,
+            "PATH": os.environ.get("PATH")
         }
     )
 

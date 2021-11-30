@@ -11,7 +11,35 @@ from src.util import log
 
 __version__ = '0.1.1'
 
-parser = argparse.ArgumentParser()
+PRINT_PREFIX = """
+        ________________________________________
+       /                 /                     /
+      /   _ __ ___  _   /__  _____  ___       /
+     /---| '_ ` _ \| | | \ \/ / _ \/ __|-----/
+    /    | | | | | | |_| |>  <  __/ (__     /
+   /     |_| |_| |_|\__,_/_/\_\___|\___|   /
+  /                /                      /
+ /________________/______________________/
+
+          muXec - Multiplexed Exec
+"""
+
+PRINT_SUFFIX = """examples:
+    muxec -p 2 'ls -la' 'for i in 1 2 3 4 5 ; do date; sleep 1; done'
+    find . -type -f -name '*.java' | head | muxec --xargs 'echo'
+    cat dockerfiles.txt | muxec --xargs -p 4 --break-on-fail 'docker build -f {} .'
+"""
+
+
+class MuxecArgumentParser(argparse.ArgumentParser):
+    def format_help(self):
+        return f"{PRINT_PREFIX}\n{super().format_help()}"
+
+    def format_usage(self):
+        return f"{PRINT_PREFIX}\n{super().format_usage()}{PRINT_SUFFIX}"
+
+
+parser = MuxecArgumentParser()
 
 
 def parse_args():
@@ -62,6 +90,7 @@ def main():
 
     parallelism = min(opts.parallelism, len(commands))
     log(f"Running {len(commands)} commands with {parallelism} parallelism, terminal is lines={state.full_height}, cols={state.full_width}")
+    log(str(commands))
 
     run(parallelism, commands)
 
