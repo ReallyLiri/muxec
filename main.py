@@ -6,7 +6,6 @@ import sys
 
 import src.state as state
 from src.consts import DEBUG_HINT_ENVVAR
-from src.panes import full_height, full_width
 from src.run import run
 from src.util import log
 
@@ -62,7 +61,7 @@ def main():
             commands.append(command)
 
     parallelism = min(opts.parallelism, len(commands))
-    log(f"Running {len(commands)} commands with {parallelism} parallelism, terminal is h={full_height}, w={full_width}")
+    log(f"Running {len(commands)} commands with {parallelism} parallelism, terminal is lines={state.full_height}, cols={state.full_width}")
 
     run(parallelism, commands)
 

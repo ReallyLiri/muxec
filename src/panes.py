@@ -7,20 +7,17 @@ from src.consts import *
 from src.errors import ReadSmoreError
 from src.util import log, _at, _extract_number, should_log
 
-stdScr = None
-full_height, full_width = None, None
-
 
 def _write_row(top_offset):
     log(f"Writing full row at {top_offset}")
-    stdScr.addstr(top_offset, 0, '-' * full_width)
+    state.stdScr.addstr(top_offset, 0, '-' * state.full_width)
 
 
 def _write_column(left_offset):
     log(f"Writing full column at {left_offset}")
-    for line in range(full_height):
+    for line in range(state.full_height):
         if line > 0:
-            stdScr.addstr(line, left_offset, '|')
+            state.stdScr.addstr(line, left_offset, '|')
 
 
 def _handle_escape_sequence(pad, text, esc_i):
@@ -118,8 +115,8 @@ def update_status():
     status = f"Running... {len(state.completed_processes)} / {state.total} completed"
     if len(state.failed_processes) > 0:
         status = f"{status}, {len(state.failed_processes)} failed"
-    stdScr.addstr(0, 0, status + " " * (full_width - len(status)))
-    stdScr.refresh()
+    state.stdScr.addstr(0, 0, status + " " * (state.full_width - len(status)))
+    state.stdScr.refresh()
 
 
 def clear_pane(pane_num):
@@ -131,9 +128,8 @@ def clear_pane(pane_num):
 
 
 def build_views(num_panes):
-    global stdScr, full_height, full_width
-    stdScr = curses.initscr()
-    full_height, full_width = stdScr.getmaxyx()
+    state.stdScr = curses.initscr()
+    state.full_height, state.full_width = state.stdScr.getmaxyx()
     curses.noecho()
     curses.cbreak()
     curses.curs_set(0)
@@ -148,8 +144,8 @@ def build_views(num_panes):
         n_rows = 2
         n_cols = num_panes // 2
 
-    pane_height = (full_height - STATUS_HEIGHT) // n_rows
-    pane_width = full_width // n_cols
+    pane_height = (state.full_height - STATUS_HEIGHT) // n_rows
+    pane_width = state.full_width // n_cols
 
     log(f"Setting up grid of {n_rows} rows x {n_cols} cols, pane h={pane_height},w={pane_width}")
 
@@ -167,7 +163,7 @@ def build_views(num_panes):
                 left_offset += 1
             state.panes.append(_create_pane(pane_width - 1, pane_height - 1, top_offset, left_offset))
 
-    stdScr.refresh()
+    state.stdScr.refresh()
 
 
 def _create_pane(width, height, top_offset, left_offset):
@@ -186,7 +182,7 @@ def _create_pane(width, height, top_offset, left_offset):
 
 def end():
     curses.nocbreak()
-    stdScr.keypad(False)
+    state.stdScr.keypad(False)
     curses.echo()
     curses.endwin()
     curses.curs_set(1)

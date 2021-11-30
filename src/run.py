@@ -11,7 +11,7 @@ import select
 
 import src.state as state
 from src.errors import BreakOnFailError, ReadSmoreError
-from src.panes import write_to_pane, clear_pane, update_status, build_views, end, full_width, full_height
+from src.panes import write_to_pane, clear_pane, update_status, build_views, end
 from src.util import log, CircularBuffer
 
 TERM_ENV = os.environ.get("TERM", "linux")
@@ -22,6 +22,12 @@ def _get_fds(process):
 
 
 def _create_subprocess(command, pipe):
+    env = {
+        "LINES": str(state.full_height),
+        "COLUMNS": str(state.full_width),
+        "TERM": TERM_ENV
+    }
+    log(f"!!! {env}")
     return subprocess.Popen(
         command,
         shell=True,
@@ -29,8 +35,8 @@ def _create_subprocess(command, pipe):
         stderr=pipe,
         close_fds=True,
         env={
-            "LINES": str(full_width),
-            "COLUMNS": str(full_height),
+            "LINES": str(state.full_height),
+            "COLUMNS": str(state.full_width),
             "TERM": TERM_ENV
         }
     )
@@ -122,10 +128,10 @@ def run(parallelism, commands):
     try:
         build_views(num_panes)
         _loop_commands(commands)
-    except Exception as ex:
+    except BaseException as ex:
         if isinstance(ex, KeyboardInterrupt):
             print("interrupted, shutting down...")
-        if isinstance(ex, BreakOnFailError):
+        elif isinstance(ex, BreakOnFailError):
             print("breaking on failure...")
             broke = True
         else:
@@ -139,6 +145,8 @@ def run(parallelism, commands):
         for proc in state.all_processes_to_rolling_output.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGKILL)
+        if isinstance(ex, KeyboardInterrupt):
+            return
     finally:
         end()
 
