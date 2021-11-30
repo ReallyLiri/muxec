@@ -1,6 +1,6 @@
 # muXec
 
-[![PyPI version](https://badge.fury.io/py/muxec.svg)](https://badge.fury.io/py/muxec)
+[![PyPI version](https://badge.fury.io/py/muxec.svg?)](https://badge.fury.io/py/muxec)
 
 A command line tool for running multiple commands simultaneously while observing their output
 
@@ -65,7 +65,9 @@ cat images.txt | muxec --xargs -p 4 --break-on-fail 'docker pull'
 
 ## Open Issues
 
-There is still no full support for all control sequences or for colors.
+* Terminal resize is not handled
+  
+* There is still no full support for all control sequences or for colors (see [spellr/culour](https://github.com/spellr/culour))
 
 ## Development
 
