@@ -11,25 +11,36 @@ import select
 
 import src.state as state
 from src.errors import BreakOnFailError, ReadSmoreError
-from src.panes import write_to_pane, clear_pane, update_status, build_views, end
-from src.util import log
+from src.panes import write_to_pane, clear_pane, update_status, build_views, end, full_width, full_height
+from src.util import log, CircularBuffer
+
+TERM_ENV = os.environ.get("TERM", "linux")
 
 
 def _get_fds(process):
     return [process.stdout.fileno(), process.stderr.fileno()]
 
 
+def _create_subprocess(command, pipe):
+    return subprocess.Popen(
+        command,
+        shell=True,
+        stdout=pipe,
+        stderr=pipe,
+        close_fds=True,
+        env={
+            "LINES": str(full_width),
+            "COLUMNS": str(full_height),
+            "TERM": TERM_ENV
+        }
+    )
+
+
 def _loop_commands(commands):
     def _process_generator():
         for command in commands:
             primary, secondary = pty.openpty()
-            yield subprocess.Popen(
-                command,
-                shell=True,
-                stdout=secondary,
-                stderr=secondary,
-                close_fds=True
-            ), primary
+            yield _create_subprocess(command, secondary), primary
 
     gen = _process_generator()
     pane_num_by_fd = {}
@@ -48,7 +59,7 @@ def _loop_commands(commands):
         pane_num_by_fd[new_fd] = run_on_pane_num
         data_template[new_fd] = bytes()
         process_by_fd[new_fd] = new_process
-        state.all_processes_to_rolling_output[new_process] = []
+        state.all_processes_to_rolling_output[new_process] = CircularBuffer(16)
         if clear:
             clear_pane(run_on_pane_num)
 
@@ -82,6 +93,8 @@ def _loop_commands(commands):
                     except ReadSmoreError as err:
                         data_string = data_string[err.skip:]
                         continue_read = True
+            for line in data_string.split("\n"):
+                state.all_processes_to_rolling_output[process_by_fd[fd]].add(line)
 
         ready_panes = []
         for fd in active_fds.copy():
@@ -132,11 +145,14 @@ def run(parallelism, commands):
     if not failed:
         if not broke:
             print(f"Completed running {len(state.all_processes_to_rolling_output)} processes, {len(state.failed_processes)} failed")
-        for process, stderr in state.all_processes_to_rolling_output.items():
-            print(f"\tProcess '{process.args}' ({process.pid}) completed with code {process.returncode}")
+        for process in state.all_processes_to_rolling_output.keys():
+            if process.returncode == 0:
+                print(f"\tProcess '{process.args}' ({process.pid}) completed successfully")
+        for process, buffer in state.all_processes_to_rolling_output.items():
             if process.returncode != 0:
-                stderr = stderr.strip().replace('\n', '\n\t\t')
-                if stderr:
-                    print(f"\t\t{stderr}")
+                print(f"\tProcess '{process.args}' ({process.pid}) failed with code {process.returncode}")
+                buffer = "\n\t\t".join(buffer).strip()
+                if buffer:
+                    print(f"\t\t{buffer}")
     else:
         print("internal error")
