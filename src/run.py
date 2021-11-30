@@ -1,0 +1,142 @@
+#!/usr/bin/env python
+
+import os
+import pty
+import signal
+import subprocess
+import time
+import traceback
+
+import select
+
+import src.state as state
+from src.errors import BreakOnFailError, ReadSmoreError
+from src.panes import write_to_pane, clear_pane, update_status, build_views, end
+from src.util import log
+
+
+def _get_fds(process):
+    return [process.stdout.fileno(), process.stderr.fileno()]
+
+
+def _loop_commands(commands):
+    def _process_generator():
+        for command in commands:
+            primary, secondary = pty.openpty()
+            yield subprocess.Popen(
+                command,
+                shell=True,
+                stdout=secondary,
+                stderr=secondary,
+                close_fds=True
+            ), primary
+
+    gen = _process_generator()
+    pane_num_by_fd = {}
+    process_by_fd = {}
+    active_fds = set()
+    data_template = {}
+
+    def _try_run_process(run_on_pane_num, clear):
+        new_process, new_fd = next(gen, (None, 0))
+        if new_process is None:
+            state.exhausted = True
+            write_to_pane(run_on_pane_num, "[completed, no more commands to run]")
+            return
+        log(f"Started process '{new_process.args}' ({new_process.pid}) with fd {new_fd} on pane {run_on_pane_num} (clear={clear})")
+        active_fds.add(new_fd)
+        pane_num_by_fd[new_fd] = run_on_pane_num
+        data_template[new_fd] = bytes()
+        process_by_fd[new_fd] = new_process
+        state.all_processes_to_rolling_output[new_process] = []
+        if clear:
+            clear_pane(run_on_pane_num)
+
+    def _on_process_completed(completed_fd, completed_process):
+        state.completed_processes.add(completed_process.pid)
+        exit_code = completed_process.returncode
+        ready_pane_num = pane_num_by_fd[completed_fd]
+        log(f"Process {completed_process.pid} with fd {completed_fd} at {ready_pane_num} completed with code {exit_code}")
+        if exit_code != 0:
+            state.failed_processes.add(completed_process.pid)
+            if state.break_on_fail:
+                raise BreakOnFailError()
+        update_status()
+        return ready_pane_num
+
+    for pane_num in range(len(state.panes)):
+        _try_run_process(pane_num, False)
+
+    while active_fds or not state.exhausted:
+        ready_fds, _, _ = select.select(active_fds, [], [], 1)
+        for fd in ready_fds:
+            continue_read = True
+            data_string = ""
+            while continue_read:
+                data = os.read(fd, 1024)
+                if data:
+                    data_string += data.decode('utf-8')
+                    try:
+                        write_to_pane(pane_num_by_fd[fd], data_string)
+                        continue_read = False
+                    except ReadSmoreError as err:
+                        data_string = data_string[err.skip:]
+                        continue_read = True
+
+        ready_panes = []
+        for fd in active_fds.copy():
+            process = process_by_fd[fd]
+            if process.poll() is not None:
+                active_fds.remove(fd)
+                ready_pane = _on_process_completed(fd, process)
+                if ready_pane is not None:
+                    ready_panes.append(ready_pane)
+                continue
+
+        for ready_pane in ready_panes:
+            _try_run_process(ready_pane, True)
+
+    update_status()
+
+
+def run(parallelism, commands):
+    num_panes = parallelism
+
+    state.total = len(commands)
+
+    failed = False
+    broke = False
+    try:
+        build_views(num_panes)
+        _loop_commands(commands)
+    except Exception as ex:
+        if isinstance(ex, KeyboardInterrupt):
+            print("interrupted, shutting down...")
+        if isinstance(ex, BreakOnFailError):
+            print("breaking on failure...")
+            broke = True
+        else:
+            log(f"Failed with exception: {ex}")
+            log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
+            failed = True
+        for proc in state.all_processes_to_rolling_output.keys():
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGINT)
+        time.sleep(1)
+        for proc in state.all_processes_to_rolling_output.keys():
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGKILL)
+    finally:
+        end()
+
+    if not failed:
+        if not broke:
+            print(f"Completed running {len(state.all_processes_to_rolling_output)} processes, {len(state.failed_processes)} failed")
+        for process, stderr in state.all_processes_to_rolling_output.items():
+            print(f"\tProcess '{process.args}' ({process.pid}) completed with code {process.returncode}")
+            if process.returncode != 0:
+                stderr = stderr.strip().replace('\n', '\n\t\t')
+                if stderr:
+                    print(f"\t\t{stderr}")
+    else:
+        print("internal error")

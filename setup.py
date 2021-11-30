@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-__version__ = '0.1.0'
+from main import __version__
 
 with open("README.md", "r") as f:
     long_description = f.read()
@@ -20,7 +20,7 @@ setup(
     packages=find_packages(),
     entry_points='''
         [console_scripts]
-        muxec=muxec:main
+        muxec=main:main
     ''',
     classifiers=[
         "Programming Language :: Python :: 3",
