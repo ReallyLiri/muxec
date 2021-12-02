@@ -41,8 +41,17 @@ optional arguments:
   -I REPLACE_STR, --replace-str REPLACE_STR
                         when using xargs mode, replace occurrences of replace-str in the command with input, default: {}
   --break-on-fail       immediately break whole execution if any command fails
+  -m MODE, --mode MODE  output print mode, either 'plain' or 'tty' (or 'auto' to pick the right one automatically)
 ```
 
+To use from python script:
+
+```python
+from muxec.run import run
+from muxec.consts import MODE_PLAIN
+
+run(parallelism=4, commands=["cmd", "other"], break_on_fail=True, print_mode=MODE_PLAIN)
+```
 ### Examples
 
 ```bash

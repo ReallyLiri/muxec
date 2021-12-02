@@ -4,21 +4,19 @@ import os
 import pty
 import signal
 import subprocess
+import sys
 import time
 import traceback
 
 import select
 
-import src.state as state
-from src.errors import BreakOnFailError, ReadSmoreError
-from src.panes import write_to_pane, clear_pane, update_status, build_views, end
-from src.util import log, CircularBuffer
+from . import state as state
+from .consts import MODE_TTY, MODE_AUTO, MODE_PLAIN
+from .errors import BreakOnFailError, ReadSmoreError
+from .panes import write_to_pane, clear_pane, update_status, build_views, end
+from .util import log, CircularBuffer
 
 TERM_ENV = os.environ.get("TERM", "linux")
-
-
-def _get_fds(process):
-    return [process.stdout.fileno(), process.stderr.fileno()]
 
 
 def _create_subprocess(command, pipe):
@@ -40,8 +38,8 @@ def _create_subprocess(command, pipe):
 def _loop_commands(commands):
     def _process_generator():
         for command in commands:
-            primary, secondary = pty.openpty()
-            yield _create_subprocess(command, secondary), primary
+            read_pipe, write_pipe = pty.openpty() if state.is_tty else os.pipe()
+            yield _create_subprocess(command, write_pipe), read_pipe
 
     gen = _process_generator()
     pane_num_by_fd = {}
@@ -113,14 +111,22 @@ def _loop_commands(commands):
     update_status()
 
 
-def run(parallelism, commands):
+def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
     num_panes = parallelism
 
     state.total = len(commands)
+    state.break_on_fail = break_on_fail
+
+    if print_mode == MODE_AUTO:
+        print_mode = MODE_TTY if sys.stdout.isatty() else MODE_PLAIN
+
+    state.is_tty = print_mode == MODE_TTY
 
     failed = False
     broke = False
     try:
+        log(f"Running {len(commands)} commands with {parallelism} parallelism")
+        log(str(commands))
         build_views(num_panes)
         _loop_commands(commands)
     except BaseException as ex:

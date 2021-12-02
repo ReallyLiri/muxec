@@ -4,12 +4,10 @@ import argparse
 import os
 import sys
 
-import src.state as state
-from src.consts import DEBUG_HINT_ENVVAR
+from src.consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
 from src.run import run
-from src.util import log
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 PRINT_PREFIX = """
         ________________________________________
@@ -69,13 +67,22 @@ def parse_args():
         help="immediately break whole execution if any command fails"
     )
 
+    parser.add_argument(
+        "-m", "--mode", type=str, default="auto",
+        help=f"output print mode, either '{MODE_PLAIN}' or '{MODE_TTY}' (or '{MODE_AUTO}' to pick the right one automatically)"
+    )
+
     return parser.parse_args()
 
 
 def main():
     opts = parse_args()
-    state.break_on_fail = opts.break_on_fail
     commands = opts.commands
+    mode = opts.mode
+
+    if mode not in {MODE_TTY, MODE_PLAIN, MODE_AUTO}:
+        print(f"output print mode '{mode}' is not supported")
+        exit(1)
 
     if opts.xargs:
         base_command = " ".join(commands)
@@ -89,10 +96,8 @@ def main():
             commands.append(command)
 
     parallelism = min(opts.parallelism, len(commands))
-    log(f"Running {len(commands)} commands with {parallelism} parallelism, terminal is lines={state.full_height}, cols={state.full_width}")
-    log(str(commands))
 
-    run(parallelism, commands)
+    run(parallelism, commands, opts.break_on_fail, mode)
 
 
 if __name__ == '__main__':

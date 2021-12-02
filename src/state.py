@@ -7,3 +7,4 @@ exhausted = False
 break_on_fail = False
 stdScr = None
 full_height, full_width = None, None
+is_tty = True

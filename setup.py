@@ -10,6 +10,8 @@ setup(
     description="Multiplexed Exec Tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
+    packages=["muxec", "main", "src"],
+    package_dir={"muxec": "src/", "main": ".", "src": "src/"},
     version=__version__,
     author='ReallyLiri',
     url='https://github.com/ReallyLiri/muxec',
@@ -17,11 +19,11 @@ setup(
     keywords='mux multiplex exec execute xargs shell parallel',
     py_modules=['muxec'],
     python_requires='>=3.6',
-    packages=find_packages(),
-    entry_points='''
-        [console_scripts]
-        muxec=main:main
-    ''',
+    entry_points={
+        'console_scripts': [
+            'muxec=main:main'
+        ]
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",

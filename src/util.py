@@ -1,7 +1,7 @@
 import os
 
-from src.consts import LOG_FILE_PATH, LOG_HINT_ENVVAR
-from src.errors import ReadSmoreError
+from .consts import LOG_FILE_PATH, LOG_HINT_ENVVAR
+from .errors import ReadSmoreError
 
 should_log = os.environ.get(LOG_HINT_ENVVAR) is not None
 

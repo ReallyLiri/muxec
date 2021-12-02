@@ -2,10 +2,10 @@ import curses
 
 import unicodedata
 
-import src.state as state
-from src.consts import *
-from src.errors import ReadSmoreError
-from src.util import log, _at, _extract_number, should_log
+from . import state as state
+from .consts import *
+from .errors import ReadSmoreError
+from .util import log, _at, _extract_number, should_log
 
 
 def _write_row(top_offset):
@@ -77,6 +77,12 @@ def _handle_escape_sequence(pad, text, esc_i):
 
 
 def write_to_pane(pane_num, text):
+    if not state.is_tty:
+        for line in text.split("\n"):
+            if line:
+                print(f"[{pane_num}] {line.strip()}")
+        return
+
     pane = state.panes[pane_num]
     pad = pane['pad']
     skip_indexes = set()
@@ -112,6 +118,8 @@ def _fill_blanks_and_reset_cursor(pad):
 
 
 def update_status():
+    if not state.is_tty:
+        return
     status = f"Running... {len(state.completed_processes)} / {state.total} completed"
     if len(state.failed_processes) > 0:
         status = f"{status}, {len(state.failed_processes)} failed"
@@ -120,6 +128,8 @@ def update_status():
 
 
 def clear_pane(pane_num):
+    if not state.is_tty:
+        return
     log(f"Clearing {pane_num}")
     pane = state.panes[pane_num]
     pad = pane['pad']
@@ -128,8 +138,13 @@ def clear_pane(pane_num):
 
 
 def build_views(num_panes):
+    if not state.is_tty:
+        for i in range(num_panes):
+            state.panes.append({})
+        return
     state.stdScr = curses.initscr()
     state.full_height, state.full_width = state.stdScr.getmaxyx()
+    log(f"Terminal size is lines={state.full_height}, cols={state.full_width}")
     curses.noecho()
     curses.cbreak()
     curses.curs_set(0)
@@ -181,6 +196,8 @@ def _create_pane(width, height, top_offset, left_offset):
 
 
 def end():
+    if not state.is_tty:
+        return
     curses.nocbreak()
     state.stdScr.keypad(False)
     curses.echo()
