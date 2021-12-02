@@ -7,7 +7,7 @@ import sys
 from src.consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
 from src.run import run
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 
 PRINT_PREFIX = f"""
         ________________________________________
