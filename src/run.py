@@ -124,7 +124,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
 
     state.is_tty = print_mode == MODE_TTY
 
-    failed = False
+    crashed = False
     broke = False
     try:
         log(f"Running {len(commands)} commands with {parallelism} parallelism")
@@ -140,7 +140,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
         else:
             log(f"Failed with exception: {ex}")
             log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
-            failed = True
+            crashed = True
         for proc in state.all_processes_to_rolling_output.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGINT)
@@ -149,21 +149,25 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
             if proc.poll() is None:
                 proc.send_signal(signal.SIGKILL)
         if isinstance(ex, KeyboardInterrupt):
-            return
+            return False
     finally:
         end()
 
-    if not failed:
+    if not crashed:
         if not broke:
             print(f"Completed running {len(state.all_processes_to_rolling_output)} processes, {len(state.failed_processes)} failed")
         for process in state.all_processes_to_rolling_output.keys():
             if process.returncode == 0:
                 print(f"\tProcess '{process.args}' ({process.pid}) completed successfully")
+        any_failed = False
         for process, buffer in state.all_processes_to_rolling_output.items():
             if process.returncode != 0:
+                any_failed = True
                 print(f"\tProcess '{process.args}' ({process.pid}) failed with code {process.returncode}")
                 buffer = "\n\t\t".join(buffer).strip()
                 if buffer:
                     print(f"\t\t{buffer}")
+        return not any_failed
     else:
         print("internal error")
+        return False

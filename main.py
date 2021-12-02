@@ -96,7 +96,8 @@ def main():
                 command = base_command.replace(replace_str, line)
             commands.append(command)
 
-    run(opts.parallelism, commands, opts.break_on_fail, mode)
+    success = run(opts.parallelism, commands, opts.break_on_fail, mode)
+    exit(0 if success else 1)
 
 
 if __name__ == '__main__':
