@@ -114,6 +114,8 @@ def _loop_commands(commands):
 def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
     num_panes = parallelism
 
+    parallelism = min(parallelism, len(commands))
+
     state.total = len(commands)
     state.break_on_fail = break_on_fail
 

@@ -7,9 +7,9 @@ import sys
 from src.consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
 from src.run import run
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 
-PRINT_PREFIX = """
+PRINT_PREFIX = f"""
         ________________________________________
        /                 /                     /
       /   _ __ ___  _   /__  _____  ___       /
@@ -20,6 +20,7 @@ PRINT_PREFIX = """
  /________________/______________________/
 
           muXec - Multiplexed Exec
+              version {__version__}
 """
 
 PRINT_SUFFIX = """examples:
@@ -95,9 +96,7 @@ def main():
                 command = base_command.replace(replace_str, line)
             commands.append(command)
 
-    parallelism = min(opts.parallelism, len(commands))
-
-    run(parallelism, commands, opts.break_on_fail, mode)
+    run(opts.parallelism, commands, opts.break_on_fail, mode)
 
 
 if __name__ == '__main__':
