@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-from main import __version__
+from src.main import __version__
 
 with open("README.md", "r") as f:
     long_description = f.read()
@@ -10,8 +10,8 @@ setup(
     description="Multiplexed Exec Tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=["muxec", "main", "src"],
-    package_dir={"muxec": "src/", "main": ".", "src": "src/"},
+    packages=["muxec"],
+    package_dir={"muxec": "src/"},
     version=__version__,
     author='ReallyLiri',
     url='https://github.com/ReallyLiri/muxec',
