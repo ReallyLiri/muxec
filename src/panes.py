@@ -77,13 +77,14 @@ def _handle_escape_sequence(pad, text, esc_i):
 
 
 def write_to_pane(pane_num, text):
+    pane = state.panes[pane_num]
+
     if not state.is_tty:
         for line in text.split("\n"):
             if line:
-                print(f"[{pane_num}] {line.strip()}")
+                print(f"[{pane['process_ordinal_id']}] {line.strip()}")
         return
 
-    pane = state.panes[pane_num]
     pad = pane['pad']
     skip_indexes = set()
     for i, ch in enumerate(text):
@@ -191,7 +192,8 @@ def _create_pane(width, height, top_offset, left_offset):
         'pad': pad,
         'height': height,
         'width': width,
-        'coords': coords
+        'coords': coords,
+        'process_ordinal_id': 0
     }
 
 

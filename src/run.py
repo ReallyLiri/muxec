@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import itertools
 import os
 import pty
 import signal
@@ -18,6 +19,8 @@ from .util import log, CircularBuffer
 
 TERM_ENV = os.environ.get("TERM", "linux")
 
+ordinal_id_counter = itertools.count()
+
 
 def _create_subprocess(command, pipe):
     return subprocess.Popen(
@@ -27,10 +30,10 @@ def _create_subprocess(command, pipe):
         stderr=pipe,
         close_fds=True,
         env={
+            **os.environ,
             "LINES": str(state.full_height),
             "COLUMNS": str(state.full_width),
-            "TERM": TERM_ENV,
-            "PATH": os.environ.get("PATH")
+            "TERM": TERM_ENV
         }
     )
 
@@ -53,6 +56,7 @@ def _loop_commands(commands):
             state.exhausted = True
             write_to_pane(run_on_pane_num, "[completed, no more commands to run]")
             return
+        state.panes[run_on_pane_num]['process_ordinal_id'] = next(ordinal_id_counter)
         log(f"Started process '{new_process.args}' ({new_process.pid}) with fd {new_fd} on pane {run_on_pane_num} (clear={clear})")
         active_fds.add(new_fd)
         pane_num_by_fd[new_fd] = run_on_pane_num
@@ -61,6 +65,7 @@ def _loop_commands(commands):
         state.all_processes_to_rolling_output[new_process] = CircularBuffer(16)
         if clear:
             clear_pane(run_on_pane_num)
+        write_to_pane(run_on_pane_num, str(new_process.args) + "\n")
 
     def _on_process_completed(completed_fd, completed_process):
         state.completed_processes.add(completed_process.pid)
