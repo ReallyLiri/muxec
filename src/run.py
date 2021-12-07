@@ -11,10 +11,10 @@ import traceback
 
 import select
 
-from . import state as state
 from .consts import MODE_TTY, MODE_AUTO, MODE_PLAIN
 from .errors import BreakOnFailError, ReadSmoreError
 from .panes import write_to_pane, clear_pane, update_status, build_views, end
+from .state import get_state, reset_state
 from .util import log, CircularBuffer
 
 TERM_ENV = os.environ.get("TERM", "linux")
@@ -31,8 +31,8 @@ def _create_subprocess(command, pipe):
         close_fds=True,
         env={
             **os.environ,
-            "LINES": str(state.full_height),
-            "COLUMNS": str(state.full_width),
+            "LINES": str(get_state().full_height),
+            "COLUMNS": str(get_state().full_width),
             "TERM": TERM_ENV
         }
     )
@@ -41,7 +41,7 @@ def _create_subprocess(command, pipe):
 def _loop_commands(commands):
     def _process_generator():
         for command in commands:
-            read_pipe, write_pipe = pty.openpty() if state.is_tty else os.pipe()
+            read_pipe, write_pipe = pty.openpty() if get_state().is_tty else os.pipe()
             yield _create_subprocess(command, write_pipe), read_pipe
 
     gen = _process_generator()
@@ -53,36 +53,36 @@ def _loop_commands(commands):
     def _try_run_process(run_on_pane_num, clear):
         new_process, new_fd = next(gen, (None, 0))
         if new_process is None:
-            state.exhausted = True
+            get_state().exhausted = True
             write_to_pane(run_on_pane_num, "[completed, no more commands to run]")
             return
-        state.panes[run_on_pane_num]['process_ordinal_id'] = next(ordinal_id_counter)
+        get_state().panes[run_on_pane_num]['process_ordinal_id'] = next(ordinal_id_counter)
         log(f"Started process '{new_process.args}' ({new_process.pid}) with fd {new_fd} on pane {run_on_pane_num} (clear={clear})")
         active_fds.add(new_fd)
         pane_num_by_fd[new_fd] = run_on_pane_num
         data_template[new_fd] = bytes()
         process_by_fd[new_fd] = new_process
-        state.all_processes_to_rolling_output[new_process] = CircularBuffer(16)
+        get_state().all_processes_to_rolling_output[new_process] = CircularBuffer(16)
         if clear:
             clear_pane(run_on_pane_num)
         write_to_pane(run_on_pane_num, str(new_process.args) + "\n")
 
     def _on_process_completed(completed_fd, completed_process):
-        state.completed_processes.add(completed_process.pid)
+        get_state().completed_processes.add(completed_process.pid)
         exit_code = completed_process.returncode
         ready_pane_num = pane_num_by_fd[completed_fd]
         log(f"Process {completed_process.pid} with fd {completed_fd} at {ready_pane_num} completed with code {exit_code}")
         if exit_code != 0:
-            state.failed_processes.add(completed_process.pid)
-            if state.break_on_fail:
+            get_state().failed_processes.add(completed_process.pid)
+            if get_state().break_on_fail:
                 raise BreakOnFailError()
         update_status()
         return ready_pane_num
 
-    for pane_num in range(len(state.panes)):
+    for pane_num in range(len(get_state().panes)):
         _try_run_process(pane_num, False)
 
-    while active_fds or not state.exhausted:
+    while active_fds or not get_state().exhausted:
         ready_fds, _, _ = select.select(active_fds, [], [], 1)
         for fd in ready_fds:
             continue_read = True
@@ -98,7 +98,7 @@ def _loop_commands(commands):
                         data_string = data_string[err.skip:]
                         continue_read = True
             for line in data_string.split("\n"):
-                state.all_processes_to_rolling_output[process_by_fd[fd]].add(line)
+                get_state().all_processes_to_rolling_output[process_by_fd[fd]].add(line)
 
         ready_panes = []
         for fd in active_fds.copy():
@@ -117,17 +117,19 @@ def _loop_commands(commands):
 
 
 def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
+    reset_state()
+
     num_panes = parallelism
 
     parallelism = min(parallelism, len(commands))
 
-    state.total = len(commands)
-    state.break_on_fail = break_on_fail
+    get_state().total = len(commands)
+    get_state().break_on_fail = break_on_fail
 
     if print_mode == MODE_AUTO:
         print_mode = MODE_TTY if sys.stdout.isatty() else MODE_PLAIN
 
-    state.is_tty = print_mode == MODE_TTY
+    get_state().is_tty = print_mode == MODE_TTY
 
     crashed = False
     broke = False
@@ -146,11 +148,11 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
             log(f"Failed with exception: {ex}")
             log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
             crashed = True
-        for proc in state.all_processes_to_rolling_output.keys():
+        for proc in get_state().all_processes_to_rolling_output.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGINT)
         time.sleep(1)
-        for proc in state.all_processes_to_rolling_output.keys():
+        for proc in get_state().all_processes_to_rolling_output.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGKILL)
         if isinstance(ex, KeyboardInterrupt):
@@ -158,21 +160,24 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY):
     finally:
         end()
 
-    if not crashed:
-        if not broke:
-            print(f"Completed running {len(state.all_processes_to_rolling_output)} processes, {len(state.failed_processes)} failed")
-        for process in state.all_processes_to_rolling_output.keys():
-            if process.returncode == 0:
-                print(f"\tProcess '{process.args}' ({process.pid}) completed successfully")
-        any_failed = False
-        for process, buffer in state.all_processes_to_rolling_output.items():
-            if process.returncode != 0:
-                any_failed = True
-                print(f"\tProcess '{process.args}' ({process.pid}) failed with code {process.returncode}")
-                buffer = "\n\t\t".join(buffer).strip()
-                if buffer:
-                    print(f"\t\t{buffer}")
-        return not any_failed
-    else:
-        print("internal error")
-        return False
+    try:
+        if not crashed:
+            if not broke:
+                print(f"Completed running {len(get_state().all_processes_to_rolling_output)} processes, {len(get_state().failed_processes)} failed")
+            for process in get_state().all_processes_to_rolling_output.keys():
+                if process.returncode == 0:
+                    print(f"\tProcess '{process.args}' ({process.pid}) completed successfully")
+            any_failed = False
+            for process, buffer in get_state().all_processes_to_rolling_output.items():
+                if process.returncode != 0:
+                    any_failed = True
+                    print(f"\tProcess '{process.args}' ({process.pid}) failed with code {process.returncode}")
+                    buffer = "\n\t\t".join(buffer).strip()
+                    if buffer:
+                        print(f"\t\t{buffer}")
+            return not any_failed
+        else:
+            print("internal error")
+            return False
+    finally:
+        reset_state()

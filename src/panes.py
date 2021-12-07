@@ -2,7 +2,7 @@ import curses
 
 import unicodedata
 
-from . import state as state
+from .state import get_state
 from .consts import *
 from .errors import ReadSmoreError
 from .util import log, _at, _extract_number, should_log
@@ -10,14 +10,14 @@ from .util import log, _at, _extract_number, should_log
 
 def _write_row(top_offset):
     log(f"Writing full row at {top_offset}")
-    state.stdScr.addstr(top_offset, 0, '-' * state.full_width)
+    get_state().stdScr.addstr(top_offset, 0, '-' * get_state().full_width)
 
 
 def _write_column(left_offset):
     log(f"Writing full column at {left_offset}")
-    for line in range(state.full_height):
+    for line in range(get_state().full_height):
         if line > 0:
-            state.stdScr.addstr(line, left_offset, '|')
+            get_state().stdScr.addstr(line, left_offset, '|')
 
 
 def _handle_escape_sequence(pad, text, esc_i):
@@ -77,9 +77,9 @@ def _handle_escape_sequence(pad, text, esc_i):
 
 
 def write_to_pane(pane_num, text):
-    pane = state.panes[pane_num]
+    pane = get_state().panes[pane_num]
 
-    if not state.is_tty:
+    if not get_state().is_tty:
         for line in text.split("\n"):
             if line:
                 print(f"[{pane['process_ordinal_id']}] {line.strip()}")
@@ -119,33 +119,33 @@ def _fill_blanks_and_reset_cursor(pad):
 
 
 def update_status():
-    if not state.is_tty:
+    if not get_state().is_tty:
         return
-    status = f"Running... {len(state.completed_processes)} / {state.total} completed"
-    if len(state.failed_processes) > 0:
-        status = f"{status}, {len(state.failed_processes)} failed"
-    state.stdScr.addstr(0, 0, status + " " * (state.full_width - len(status)))
-    state.stdScr.refresh()
+    status = f"Running... {len(get_state().completed_processes)} / {get_state().total} completed"
+    if len(get_state().failed_processes) > 0:
+        status = f"{status}, {len(get_state().failed_processes)} failed"
+    get_state().stdScr.addstr(0, 0, status + " " * (get_state().full_width - len(status)))
+    get_state().stdScr.refresh()
 
 
 def clear_pane(pane_num):
-    if not state.is_tty:
+    if not get_state().is_tty:
         return
     log(f"Clearing {pane_num}")
-    pane = state.panes[pane_num]
+    pane = get_state().panes[pane_num]
     pad = pane['pad']
     _fill_blanks_and_reset_cursor(pad)
     pad.refresh(0, 0, *pane['coords'])
 
 
 def build_views(num_panes):
-    if not state.is_tty:
+    if not get_state().is_tty:
         for i in range(num_panes):
-            state.panes.append({})
+            get_state().panes.append({})
         return
-    state.stdScr = curses.initscr()
-    state.full_height, state.full_width = state.stdScr.getmaxyx()
-    log(f"Terminal size is lines={state.full_height}, cols={state.full_width}")
+    get_state().stdScr = curses.initscr()
+    get_state().full_height, get_state().full_width = get_state().stdScr.getmaxyx()
+    log(f"Terminal size is lines={get_state().full_height}, cols={get_state().full_width}")
     curses.noecho()
     curses.cbreak()
     curses.curs_set(0)
@@ -160,8 +160,8 @@ def build_views(num_panes):
         n_rows = 2
         n_cols = num_panes // 2
 
-    pane_height = (state.full_height - STATUS_HEIGHT) // n_rows
-    pane_width = state.full_width // n_cols
+    pane_height = (get_state().full_height - STATUS_HEIGHT) // n_rows
+    pane_width = get_state().full_width // n_cols
 
     log(f"Setting up grid of {n_rows} rows x {n_cols} cols, pane h={pane_height},w={pane_width}")
 
@@ -177,9 +177,9 @@ def build_views(num_panes):
             left_offset = pane_width * col
             if col > 0:
                 left_offset += 1
-            state.panes.append(_create_pane(pane_width - 1, pane_height - 1, top_offset, left_offset))
+            get_state().panes.append(_create_pane(pane_width - 1, pane_height - 1, top_offset, left_offset))
 
-    state.stdScr.refresh()
+    get_state().stdScr.refresh()
 
 
 def _create_pane(width, height, top_offset, left_offset):
@@ -198,10 +198,10 @@ def _create_pane(width, height, top_offset, left_offset):
 
 
 def end():
-    if not state.is_tty:
+    if not get_state().is_tty:
         return
     curses.nocbreak()
-    state.stdScr.keypad(False)
+    get_state().stdScr.keypad(False)
     curses.echo()
     curses.endwin()
     curses.curs_set(1)
