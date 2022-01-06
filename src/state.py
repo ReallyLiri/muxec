@@ -11,8 +11,9 @@ class State:
         self.exhausted = False
         self.break_on_fail = False
         self.stdScr = None
-        self.full_height, full_width = None, None
+        self.full_height, self.full_width = None, None
         self.is_tty = True
+        self.prefix_timestamp = False
 
 
 def get_state():

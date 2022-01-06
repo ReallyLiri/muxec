@@ -42,6 +42,7 @@ optional arguments:
                         when using xargs mode, replace occurrences of replace-str in the command with input, default: {}
   --break-on-fail       immediately break whole execution if any command fails
   -m MODE, --mode MODE  output print mode, either 'plain' or 'tty' (or 'auto' to pick the right one automatically)
+  --ts                  prefix each line with timestamp. only applies when running in plain mode
 ```
 
 To use from python script:

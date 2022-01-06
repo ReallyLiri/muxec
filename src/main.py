@@ -7,7 +7,7 @@ import sys
 from .consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
 from .run import run
 
-__version__ = '0.1.9'
+__version__ = '0.1.10'
 
 PRINT_PREFIX = f"""
         ________________________________________
@@ -73,6 +73,11 @@ def parse_args():
         help=f"output print mode, either '{MODE_PLAIN}' or '{MODE_TTY}' (or '{MODE_AUTO}' to pick the right one automatically)"
     )
 
+    parser.add_argument(
+        "--ts", default=False, action='store_true',
+        help="prefix each line with timestamp. only applies when running in plain mode"
+    )
+
     return parser.parse_args()
 
 
@@ -96,7 +101,7 @@ def main():
                 command = base_command.replace(replace_str, line)
             commands.append(command)
 
-    success = run(opts.parallelism, commands, opts.break_on_fail, mode)
+    success = run(opts.parallelism, commands, opts.break_on_fail, mode, opts.ts)
     exit(0 if success else 1)
 
 

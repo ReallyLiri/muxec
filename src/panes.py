@@ -1,10 +1,10 @@
 import curses
-
+import datetime
 import unicodedata
 
-from .state import get_state
 from .consts import *
 from .errors import ReadSmoreError
+from .state import get_state
 from .util import log, _at, _extract_number, should_log
 
 
@@ -82,7 +82,10 @@ def write_to_pane(pane_num, text):
     if not get_state().is_tty:
         for line in text.split("\n"):
             if line:
-                print(f"[{pane['process_ordinal_id']}] {line.strip()}")
+                prefix = f"[{pane['process_ordinal_id']}]"
+                if get_state().prefix_timestamp:
+                    prefix = f"{prefix} [{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}]"
+                print(f"{prefix} {line.strip()}")
         return
 
     pad = pane['pad']
