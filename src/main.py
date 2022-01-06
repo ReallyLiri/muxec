@@ -4,10 +4,10 @@ import argparse
 import os
 import sys
 
-from src.consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
-from src.run import run
+from .consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
+from .run import run
 
-__version__ = '0.1.8'
+__version__ = '0.1.9'
 
 PRINT_PREFIX = f"""
         ________________________________________

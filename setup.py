@@ -21,7 +21,7 @@ setup(
     python_requires='>=3.6',
     entry_points={
         'console_scripts': [
-            'muxec=main:main'
+            'muxec=muxec.main:main'
         ]
     },
     classifiers=[
