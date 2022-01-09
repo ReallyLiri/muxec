@@ -119,9 +119,9 @@ def _loop_commands(commands):
 def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_timestamp=False):
     reset_state()
 
-    num_panes = parallelism
-
     parallelism = min(parallelism, len(commands))
+
+    num_panes = parallelism
 
     get_state().total = len(commands)
     get_state().break_on_fail = break_on_fail
@@ -146,8 +146,8 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
             print("breaking on failure...")
             broke = True
         else:
-            print(f"Failed with exception: {ex}")
-            print('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
+            log(f"Failed with exception: {ex}")
+            log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
             crashed = True
         for proc in get_state().all_processes_to_rolling_output.keys():
             if proc.poll() is None:
