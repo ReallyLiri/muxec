@@ -16,3 +16,5 @@ jobs:
     with:
       user: ReallyLiri
       password: ${{ secrets.PYPI }}
+      skip_existing: true
+      verbose: true
