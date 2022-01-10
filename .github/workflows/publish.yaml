@@ -1,7 +1,9 @@
 name: publish
+
 on:
   push:
     branches: [ main ]
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -11,10 +13,10 @@ jobs:
         with:
           fetch-depth: 0
 
-  - name: Publish to pypi
-    uses: pypa/gh-action-pypi-publish@release/v1
-    with:
-      user: ReallyLiri
-      password: ${{ secrets.PYPI }}
-      skip_existing: true
-      verbose: true
+      - name: Publish to pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: ReallyLiri
+          password: ${{ secrets.PYPI }}
+          skip_existing: true
+          verbose: true
