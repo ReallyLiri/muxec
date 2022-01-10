@@ -7,7 +7,7 @@ import sys
 from .consts import DEBUG_HINT_ENVVAR, MODE_AUTO, MODE_TTY, MODE_PLAIN
 from .run import run
 
-__version__ = '0.1.12workflows'
+__version__ = '0.1.12'
 
 PRINT_PREFIX = f"""
         ________________________________________
