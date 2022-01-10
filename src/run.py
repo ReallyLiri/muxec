@@ -170,7 +170,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
                     print(f"\tProcess '{process.args}' ({process.pid}) completed successfully")
             any_failed = False
             for process, buffer in get_state().all_processes_to_rolling_output.items():
-                if process.returncode != 0:
+                if process.returncode != 0 and process.returncode is not None:
                     any_failed = True
                     print(f"\tProcess '{process.args}' ({process.pid}) failed with code {process.returncode}")
                     buffer = "\n\t\t".join(buffer).strip()
