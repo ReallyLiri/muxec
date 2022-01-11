@@ -3,13 +3,12 @@
 import itertools
 import os
 import pty
+import select
 import signal
 import subprocess
 import sys
 import time
 import traceback
-
-import select
 
 from .consts import MODE_TTY, MODE_AUTO, MODE_PLAIN
 from .errors import BreakOnFailError, ReadSmoreError
@@ -132,8 +131,8 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
 
     get_state().is_tty = print_mode == MODE_TTY
 
-    crashed = False
     broke = False
+    error_message = None
     try:
         log(f"Running {len(commands)} commands with {parallelism} parallelism")
         log(str(commands))
@@ -146,9 +145,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
             print("breaking on failure...")
             broke = True
         else:
-            log(f"Failed with exception: {ex}")
-            log('\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__)))
-            crashed = True
+            error_message = f"Failed with exception: {ex}" + '\n'.join(traceback.format_exception(type(ex), ex, ex.__traceback__))
         for proc in get_state().all_processes_to_rolling_output.keys():
             if proc.poll() is None:
                 proc.send_signal(signal.SIGINT)
@@ -162,7 +159,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
         end()
 
     try:
-        if not crashed:
+        if not error_message:
             if not broke:
                 print(f"Completed running {len(get_state().all_processes_to_rolling_output)} processes, {len(get_state().failed_processes)} failed")
             for process in get_state().all_processes_to_rolling_output.keys():
@@ -178,7 +175,7 @@ def run(parallelism, commands, break_on_fail=False, print_mode=MODE_TTY, prefix_
                         print(f"\t\t{buffer}")
             return not any_failed
         else:
-            print("internal error")
+            print(error_message)
             return False
     finally:
         reset_state()
