@@ -37,6 +37,19 @@ def _create_subprocess(command, pipe):
     )
 
 
+def _decode(data):
+    encodings = ['utf-8', 'utf-16']
+    for encoding in encodings:
+        try:
+            return data.decode(encoding)
+        except Exception as ex:
+            if "unexpected end of data" in str(ex):
+                raise ReadSmoreError()
+            pass
+    log(f"failed to decode data of length {len(data)}")
+    return ""
+
+
 def _loop_commands(commands):
     def _process_generator():
         for command in commands:
@@ -86,10 +99,17 @@ def _loop_commands(commands):
         for fd in ready_fds:
             continue_read = True
             data_string = ""
+            read_more = 0
             while continue_read:
-                data = os.read(fd, 1024)
+                data = os.read(fd, 1024 + read_more)
+                read_more = 0
                 if data:
-                    data_string += data.decode('utf-8')
+                    try:
+                        data_string += _decode(data)
+                    except ReadSmoreError:
+                        continue_read = True
+                        read_more = 128
+                        continue
                     try:
                         write_to_pane(pane_num_by_fd[fd], data_string)
                         continue_read = False
